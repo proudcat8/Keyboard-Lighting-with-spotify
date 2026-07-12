@@ -8,8 +8,15 @@ from PIL import Image
 from openrgb import OpenRGBClient
 from openrgb.utils import RGBColor
 
-MAX_BRIGHTNESS = 60
 TEMP_IMAGE_PATH = "/tmp/spotify_current_art.png"
+
+# --- HARDWARE COLOR BALANCING MULTIPLIERS ---
+# Range: 0.00 to 1.00
+# - Lowering a value REDUCES the intensity/overpowering nature of that color.
+# - Increasing a value towards 1.00 lets that color shine through at maximum power.
+RED_CORRECTION   = 1.00  # Set to 1.00 for maximum red enhancement
+GREEN_CORRECTION = 0.90  # Slightly dropped to let the red pop more
+BLUE_CORRECTION  = 0.75  # Heavily dropped to kill the cold blue LED bleed
 
 def get_spotify_art_url():
     try:
@@ -22,7 +29,7 @@ def get_spotify_art_url():
     except Exception:
         return None
 
-def extract_banner_mood_color(art_url):
+def extract_accurate_average_color(art_url):
     img_path = None
     if art_url.startswith("file://"):
         img_path = art_url.replace("file://", "")
@@ -31,34 +38,26 @@ def extract_banner_mood_color(art_url):
             urlretrieve(art_url, TEMP_IMAGE_PATH)
             img_path = TEMP_IMAGE_PATH
         except Exception:
-            return (60, 20, 0)
+            return (40, 40, 40)
 
     if not img_path or not os.path.exists(img_path):
-        return (60, 20, 0)
+        return (40, 40, 40)
 
     try:
         with Image.open(img_path) as img:
-            width, height = img.size
-            banner_area = img.crop((0, 0, width, int(height * 0.2)))
-            banner_area = banner_area.resize((1, 1))
-            r, g, b = banner_area.getpixel((0, 0))[:3]
+            # Resizing the full image to 1x1 extracts the true mathematical color average
+            img_avg = img.resize((1, 1))
+            r, g, b = img_avg.getpixel((0, 0))[:3]
             
-            r = min(255, r + 80)
-            g = max(0, g - 40)
-            b = max(0, b - 100)
+            # Apply your hardware balance multipliers to correct hardware imbalance
+            r = int(r * RED_CORRECTION)
+            g = int(g * GREEN_CORRECTION)
+            b = int(b * BLUE_CORRECTION)
             
-            g = int(g * 0.4) 
-            b = int(b * 0.3)
-            
-            luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-            
-            if luminance > 0.3:
-                scale = MAX_BRIGHTNESS / (luminance * 255)
-                r, g, b = int(r * scale), int(g * scale), int(b * scale)
-            
+            # Output raw, uncapped values directly through
             return (max(0, min(255, r)), max(0, min(255, g)), max(0, min(255, b)))
     except Exception:
-        return (60, 20, 0)
+        return (40, 40, 40)
 
 def main():
     print("Connecting to OpenRGB...")
@@ -69,15 +68,15 @@ def main():
         return
 
     last_url = ""
-    print("Listening to Spotify (Press Ctrl+C to stop)...")
+    print("Listening to Spotify")
 
     while True:
         current_url = get_spotify_art_url()
         
         if current_url and current_url != last_url:
             last_url = current_url
-            r, g, b = extract_banner_mood_color(current_url)
-            print(f"Setting keyboard to Banner Mood: RGB({r}, {g}, {b})")
+            r, g, b = extract_accurate_average_color(current_url)
+            print(f"Setting keyboard to Balanced True Average: RGB({r}, {g}, {b})")
             
             for device in client.devices:
                 try:
